@@ -50,7 +50,8 @@ older orders it replaces, which is the "superseded" demo.
 ```bash
 cd backend
 pip install -r requirements.txt
-export GEMINI_API_KEY="your-key"          # Windows: set GEMINI_API_KEY=your-key
+export GEMINI_API_KEY="your-key"          # needed for search (embeddings)
+export ANTHROPIC_API_KEY="your-key"       # optional: Claude writes the answers
 uvicorn main:app --reload
 ```
 
@@ -131,7 +132,11 @@ Questions typed in Assamese are answered in Assamese (`"language": "Assamese"`);
 
 | Name | Default |
 | --- | --- |
-| `GEN_MODEL` | `gemini-3.8-flash` |
+| `ANTHROPIC_API_KEY` | (unset) - when set, Claude writes answers, drafts and summaries; Gemini becomes the fallback |
+| `ANSWER_MODEL` | `claude-opus-5-5` |
+| `ANSWER_EFFORT` | `low` (`low`/`medium`/`high`; higher = slower, more thorough) |
+| `GEN_MODEL` | `gemini-3.8-flash` (Gemini fallback, or main model without a Claude key) |
+| `GEN_FALLBACK_MODELS` | `gemini-flash-latest,gemini-flash-lite-latest,gemini-2.5-flash` |
 | `EMBED_MODEL` | `gemini-embedding-001` (must match the one used in Colab) |
 | `TOP_K` | `5` |
 | `ALLOWED_ORIGINS` | `*` (set to your Vercel URL before sharing widely) |

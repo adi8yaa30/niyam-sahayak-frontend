@@ -34,6 +34,10 @@ GEN_MODEL = os.getenv("GEN_MODEL", "gemini-3.8-flash")
 GEN_FALLBACK_MODELS = [m.strip() for m in os.getenv(
     "GEN_FALLBACK_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-2.5-flash").split(",") if m.strip()]
 GEN_MODELS = list(dict.fromkeys([GEN_MODEL, *GEN_FALLBACK_MODELS]))
+# Claude writes the answers when ANTHROPIC_API_KEY is set; Gemini (above) is the fallback and does the embeddings.
+CLAUDE_MODEL = os.getenv("ANSWER_MODEL", "claude-opus-5-5")
+CLAUDE_EFFORT = os.getenv("ANSWER_EFFORT", "low")          # low keeps answers within a few seconds
+USE_CLAUDE = bool(os.getenv("ANTHROPIC_API_KEY"))
 TOP_K = int(os.getenv("TOP_K", "5"))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
@@ -105,18 +109,69 @@ def generate(config, contents):
     raise ModelBusy(str(last))
 
 
-def generate_json(prompt, instruction):
+_claude = None
+
+
+def claude():
+    """Create the Anthropic client on first use (reads ANTHROPIC_API_KEY)."""
+    global _claude
+    if _claude is None:
+        import anthropic
+        _claude = anthropic.Anthropic(timeout=60.0, max_retries=2)
+    return _claude
+
+
+def claude_generate(prompt, system=None, schema=None):
+    """One Claude call. Returns the text of the reply (valid JSON when a schema is given)."""
+    output_config = {"effort": CLAUDE_EFFORT}
+    if schema:
+        output_config["format"] = {"type": "json_schema", "schema": schema}
+    kwargs = {"system": system} if system else {}
+    res = claude().beta.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=16000,
+        output_config=output_config,
+        # On a safety decline, the API re-runs the request on a suitable model inside the same call.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        messages=[{"role": "user", "content": prompt}],
+        **kwargs,
+    )
+    if res.stop_reason == "refusal":
+        raise RuntimeError("Claude declined the request")
+    text = "".join(b.text for b in res.content if b.type == "text").strip()
+    if not text:
+        raise RuntimeError(f"Claude returned no text (stop_reason={res.stop_reason})")
+    return text
+
+
+def with_claude_first(claude_call, gemini_call):
+    """Use Claude when configured; on any Claude failure, fall back to Gemini."""
+    if USE_CLAUDE:
+        try:
+            return claude_call()
+        except Exception as e:  # noqa: BLE001 - any failure here should fall back, not fail the officer
+            print(f"[claude] {CLAUDE_MODEL} failed, falling back to Gemini: {str(e)[:200]}", flush=True)
+    return gemini_call()
+
+
+def generate_json(prompt, instruction, schema):
     from google.genai import types
-    res = generate(types.GenerateContentConfig(
-        system_instruction=instruction, temperature=0,
-        response_mime_type="application/json"), prompt)
-    return json.loads(res.text)
+
+    def gemini_call():
+        res = generate(types.GenerateContentConfig(
+            system_instruction=instruction, temperature=0,
+            response_mime_type="application/json"), prompt)
+        return json.loads(res.text)
+
+    return with_claude_first(lambda: json.loads(claude_generate(prompt, instruction, schema)), gemini_call)
 
 
 def generate_text(prompt):
     from google.genai import types
-    res = generate(types.GenerateContentConfig(temperature=0), prompt)
-    return res.text.strip()
+    return with_claude_first(
+        lambda: claude_generate(prompt),
+        lambda: generate(types.GenerateContentConfig(temperature=0), prompt).text.strip())
 
 # ---------------------------------------------------------------- load the library
 
@@ -270,6 +325,23 @@ Reply in JSON only:
 Include 4-10 key details: dates, amounts, rates, deadlines, eligibility, responsible office.
 Every value must appear in the text on the page you give. Never invent anything."""
 
+# JSON shapes the model must return (enforced by Claude's structured outputs).
+CITATIONS_SCHEMA = {"type": "array", "items": {
+    "type": "object", "additionalProperties": False, "required": ["n", "quote"],
+    "properties": {"n": {"type": "integer"}, "quote": {"type": "string"}}}}
+ASK_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["found", "answer", "citations"],
+              "properties": {"found": {"type": "boolean"}, "answer": {"type": "string"},
+                             "citations": CITATIONS_SCHEMA}}
+DRAFT_SCHEMA = {"type": "object", "additionalProperties": False,
+                "required": ["found", "rule_reference", "conditions", "citations"],
+                "properties": {"found": {"type": "boolean"}, "rule_reference": {"type": "string"},
+                               "conditions": {"type": "string"}, "citations": CITATIONS_SCHEMA}}
+SUMMARY_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["summary", "key_details"],
+                  "properties": {"summary": {"type": "string"}, "key_details": {"type": "array", "items": {
+                      "type": "object", "additionalProperties": False, "required": ["label", "value", "page"],
+                      "properties": {"label": {"type": "string"}, "value": {"type": "string"},
+                                     "page": {"type": "integer"}}}}}}
+
 # ---------------------------------------------------------------- templates
 
 TEMPLATES = {
@@ -334,8 +406,9 @@ class FeedbackIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "documents": len(DOCUMENTS), "pieces": len(CHUNKS), "model": GEN_MODEL,
-            "fallback_models": GEN_FALLBACK_MODELS}
+    return {"status": "ok", "documents": len(DOCUMENTS), "pieces": len(CHUNKS),
+            "model": CLAUDE_MODEL if USE_CLAUDE else GEN_MODEL,
+            "fallback_models": GEN_MODELS if USE_CLAUDE else GEN_FALLBACK_MODELS}
 
 
 @app.get("/documents")
@@ -374,7 +447,7 @@ def ask(body: AskIn):
 
     if results:
         out = generate_json(f"SOURCES:\n{numbered_sources(results)}\n\nQUESTION: {question}",
-                            ASK_INSTRUCTION.format(language=language))
+                            ASK_INSTRUCTION.format(language=language), ASK_SCHEMA)
         citations = check_citations(out.get("citations"), results)
         if out.get("found") and citations:
             response.update(found=True, answer=out.get("answer", ""), citations=citations)
@@ -407,7 +480,7 @@ def draft(body: DraftIn):
 
     results = search(t["search"].format(**body.fields), libraries_for(body.department))
     out = generate_json(f"SOURCES:\n{numbered_sources(results)}\n\nREQUEST: {t['name']} for {body.fields['leave_type']}",
-                        DRAFT_INSTRUCTION) if results else {"found": False}
+                        DRAFT_INSTRUCTION, DRAFT_SCHEMA) if results else {"found": False}
     citations = check_citations(out.get("citations"), results) if out.get("found") else None
     found = bool(citations)
 
@@ -428,7 +501,7 @@ def summarise(body: SummariseIn):
     if not pieces:
         raise HTTPException(404, "Document has no readable text")
     text = "\n\n".join(f"[page {c['page']}]\n{c['text']}" for c in pieces)
-    out = generate_json(text, SUMMARY_INSTRUCTION)
+    out = generate_json(text, SUMMARY_INSTRUCTION, SUMMARY_SCHEMA)
 
     page_text = {}
     for c in pieces:
