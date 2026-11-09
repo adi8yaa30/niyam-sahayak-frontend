@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+# Runtime logs (kept in memory + this file; reset on restart)
+data/logs.jsonl

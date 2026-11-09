@@ -3,6 +3,10 @@
 Trusted rules assistant for Government of Assam officers (NESFIC 2026, problem D-36).
 Next.js (App Router) + TypeScript + Tailwind v4 + react-pdf.
 
+This repo holds both parts:
+- the dashboard (repo root), deployed on Vercel;
+- the FastAPI backend in [`backend/`](backend/README.md), deployed on Render with Root directory `backend`.
+
 ## Run
 
 ```bash
