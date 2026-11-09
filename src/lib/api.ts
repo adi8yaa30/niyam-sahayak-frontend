@@ -84,6 +84,12 @@ async function wrapMock<T>(p: Promise<T>): Promise<T> {
   }
 }
 
+/** One source card per citation number: the model can return several quotes for the same source. */
+function dedupeCitations<T extends { citations: { n: number }[] }>(res: T): T {
+  const seen = new Set<number>();
+  return { ...res, citations: res.citations.filter((c) => !seen.has(c.n) && seen.add(c.n)) };
+}
+
 export const api = {
   health: (): Promise<Health> =>
     MOCK_MODE ? wrapMock(mockApi.health()) : request("/health", { timeoutMs: SLOW_TIMEOUT_MS }),
@@ -96,13 +102,13 @@ export const api = {
         }),
 
   ask: (body: AskRequest): Promise<AskResponse> =>
-    MOCK_MODE ? wrapMock(mockApi.ask(body)) : post("/ask", body),
+    MOCK_MODE ? wrapMock(mockApi.ask(body)) : post<AskResponse>("/ask", body).then(dedupeCitations),
 
   templates: (): Promise<Template[]> =>
     MOCK_MODE ? wrapMock(mockApi.templates()) : request("/templates", { timeoutMs: SLOW_TIMEOUT_MS }),
 
   draft: (body: DraftRequest): Promise<DraftResponse> =>
-    MOCK_MODE ? wrapMock(mockApi.draft(body)) : post("/draft", body),
+    MOCK_MODE ? wrapMock(mockApi.draft(body)) : post<DraftResponse>("/draft", body).then(dedupeCitations),
 
   summarise: (document: string): Promise<SummaryResponse> =>
     MOCK_MODE ? wrapMock(mockApi.summarise(document)) : post("/summarise", { document }),
