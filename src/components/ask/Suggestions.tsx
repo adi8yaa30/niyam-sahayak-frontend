@@ -2,7 +2,7 @@
 
 export const SUGGESTED: { q: string; lang?: string }[] = [
   { q: "Can an employee demand leave as a right?" },
-  { q: "What is the current DA rate for Assam government employees?" },
+  { q: "How much earned leave is a government servant entitled to in a year?" },
   { q: "How is half pay leave earned?" },
   { q: "What is the work from home policy?" },
   // Assamese: "Can leave be demanded as a right?" Have a native speaker confirm the wording.

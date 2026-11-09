@@ -1,44 +1,22 @@
 [
   {
-    "file": "ASSAC_Leave_Rules.pdf",
-    "title": "Leave Rules (ASSAC)",
+    "file": "leave_rules_compressed.pdf",
+    "title": "Leave Rules, Joining Time and Foreign Service (guide)",
     "number": "",
     "date": "",
-    "department": "ASSAC",
+    "department": "Finance",
     "type": "Rules",
     "library": "common",
     "status": "in_force",
     "replaced_by": null
   },
   {
-    "file": "DA_Order_38_to_42.pdf",
-    "title": "Dearness Allowance order: 38% to 42%",
+    "file": "uspr.pdf",
+    "title": "Uniform Solution Proposal Requirements (NESFIC)",
     "number": "",
     "date": "",
-    "department": "Finance",
-    "type": "Order",
-    "library": "common",
-    "status": "superseded",
-    "replaced_by": "DA_Order_42_to_46.pdf"
-  },
-  {
-    "file": "DA_Order_42_to_46.pdf",
-    "title": "Dearness Allowance order: 42% to 46%",
-    "number": "",
-    "date": "",
-    "department": "Finance",
-    "type": "Order",
-    "library": "common",
-    "status": "superseded",
-    "replaced_by": "DA_Order_46_to_50_wef_2024.pdf"
-  },
-  {
-    "file": "DA_Order_46_to_50_wef_2024.pdf",
-    "title": "Dearness Allowance order: 46% to 50% (w.e.f. 1.1.2024)",
-    "number": "",
-    "date": "2024-01-01",
-    "department": "Finance",
-    "type": "Order",
+    "department": "",
+    "type": "Guidelines",
     "library": "common",
     "status": "in_force",
     "replaced_by": null
