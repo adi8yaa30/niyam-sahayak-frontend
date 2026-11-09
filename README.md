@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Niyam Sahayak: dashboard
 
-## Getting Started
+Trusted rules assistant for Government of Assam officers (NESFIC 2026, problem D-36).
+Next.js (App Router) + TypeScript + Tailwind v4 + react-pdf.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install          # also copies the pdf.js worker, cMaps and fonts into public/pdfjs
+npm run dev          # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+With `NEXT_PUBLIC_API_URL` empty the app runs in **mock mode**: canned answers, sample PDFs in
+`public/mock/` (plus `public/mock.pdf`), and a "Mock data" tag in the banner.
+To use the real backend, create `.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_API_URL=https://niyam-sahayak.onrender.com
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Mock-mode test hooks: a question containing "simulate slow" waits 17 s (shows the server-waking
+message); "simulate error" shows the error state. Draft with "Casual leave" shows the amber
+"rule not found" gap.
 
-## Learn More
+## Deploy (Vercel)
 
-To learn more about Next.js, take a look at the following resources:
+1. Push this folder to GitHub and import it in Vercel (framework: Next.js, defaults are fine).
+2. Settings → Environment Variables: `NEXT_PUBLIC_API_URL` = your Render URL. Redeploy after changing it
+   (it is baked in at build time).
+3. On the backend, set `ALLOWED_ORIGINS` to the Vercel URL.
+4. Before a demo, open the site once a minute early: it pings `/health`, which wakes Render's free tier.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Where things are
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| What | Where |
+| --- | --- |
+| Colours, fonts, radii (restyle here) | `src/app/globals.css` (`@theme`) |
+| All API calls, mock switch, PDF URLs | `src/lib/api.ts` |
+| Mock data | `src/lib/mock.ts`, PDFs from `scripts/make-mock-pdfs.py` |
+| Quote matching for the highlight | `src/lib/highlight.ts` |
+| PDF viewer (page jump, zoom, highlight) | `src/components/PdfViewerInner.tsx` |
+| Source card, citation pill, status badge | `src/components/ui.tsx` |
+| Screens | `src/components/{ask,library,draft,admin}/` |
 
-## Deploy on Vercel
+## How the highlight works
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+On each page, pdf.js text items are joined into one string that keeps only letters, marks and digits
+(so spacing, line breaks, hyphenation, curly quotes and punctuation never break a match), the quote is
+normalised the same way, and the match is mapped back to character ranges in each text item, which
+`customTextRenderer` wraps in `<mark>`. If the full quote isn't found, the longest prefix or suffix (24+
+characters) is highlighted. If nothing matches, the cited page still opens with "Quote on this page: …",
+and the viewer searches the other pages and offers "It appears on page N".

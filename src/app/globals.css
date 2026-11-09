@@ -1,26 +1,120 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Design tokens: change colours and fonts here only.
+ * Tailwind utilities are generated from these, e.g. bg-accent, text-ink-2, border-line.
+ */
+@theme {
+  /* Surfaces */
+  --color-canvas: #f7f6f2; /* warm-white page background */
+  --color-surface: #ffffff; /* cards */
+  --color-sunken: #f1efe9; /* wells, table headers, viewer background */
+  --color-line: #e4e1d8; /* hairline borders */
+  --color-line-strong: #cdc8bb;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Text */
+  --color-ink: #1b2320;
+  --color-ink-2: #434c48;
+  --color-ink-3: #5f6662; /* muted, still AA on canvas */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Accent (one colour) */
+  --color-accent: #0f5e6e;
+  --color-accent-strong: #0a4652;
+  --color-accent-soft: #e5eff0;
+  --color-accent-line: #a9c9ce;
+
+  /* Status */
+  --color-ok: #1d6638; /* in force */
+  --color-ok-soft: #e4f1e7;
+  --color-ok-line: #a8d2b4;
+  --color-warn: #7d5100; /* superseded, check manually */
+  --color-warn-soft: #fbf1db;
+  --color-warn-line: #e8c77d;
+
+  /* Highlight of the quoted line in the PDF */
+  --color-mark: rgba(255, 213, 79, 0.55);
+  --color-mark-strong: rgba(255, 193, 7, 0.75);
+
+  /* Type */
+  --font-sans: var(--font-public-sans), var(--font-noto-bengali), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-serif: "Times New Roman", Times, Georgia, serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --radius-card: 12px;
+  --radius-ctl: 8px;
+
+  --animate-mark-pulse: mark-pulse 1.6s ease-out 1;
+  --animate-fade-in: fade-in 0.25s ease-out 1;
+
+  @keyframes mark-pulse {
+    0% { background-color: var(--color-mark-strong); box-shadow: 0 0 0 6px rgba(255, 193, 7, 0.35); }
+    100% { background-color: var(--color-mark); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Base rules live in a layer so Tailwind utilities can override them. */
+@layer base {
+  html {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    line-height: 1.55;
+  }
+
+  /* Visible focus ring for keyboard users everywhere */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+  }
+}
+
+/* Quote highlight inside react-pdf's text layer (the text there is transparent over the canvas). */
+.react-pdf__Page__textContent mark.quote-mark {
+  background: var(--color-mark);
+  color: transparent;
+  border-radius: 2px;
+  padding: 0.05em 0;
+  margin: -0.05em 0;
+  animation: var(--animate-mark-pulse);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, #ece9e1 0%, #f5f3ee 50%, #ece9e1 100%);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+@keyframes skeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Office-order paper for drafts */
+.paper {
+  background: var(--color-surface);
+  box-shadow: 0 1px 0 var(--color-line), 0 8px 24px -12px rgba(27, 35, 32, 0.18);
 }

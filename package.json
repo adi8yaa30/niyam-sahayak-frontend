@@ -6,12 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node scripts/copy-pdfjs-assets.mjs",
+    "mock-pdfs": "python3 scripts/make-mock-pdfs.py"
   },
   "dependencies": {
+    "docx": "^9.15.3",
     "next": "16.4.5",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-pdf": "^11.0.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
