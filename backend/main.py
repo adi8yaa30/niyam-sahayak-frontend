@@ -21,7 +21,7 @@ from typing import Optional
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------- settings
@@ -30,6 +30,10 @@ DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).parent / "data"))
 DOCS_DIR = DATA_DIR / "docs"
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 GEN_MODEL = os.getenv("GEN_MODEL", "gemini-3.8-flash")
+# Tried in order when the main model is busy (503), rate-limited (429) or not available to this key (404).
+GEN_FALLBACK_MODELS = [m.strip() for m in os.getenv(
+    "GEN_FALLBACK_MODELS", "gemini-flash-latest,gemini-flash-lite-latest,gemini-2.5-flash").split(",") if m.strip()]
+GEN_MODELS = list(dict.fromkeys([GEN_MODEL, *GEN_FALLBACK_MODELS]))
 TOP_K = int(os.getenv("TOP_K", "5"))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
@@ -78,21 +82,40 @@ def embed(texts, task):
     return v / np.linalg.norm(v, axis=1, keepdims=True)
 
 
+class ModelBusy(Exception):
+    """Every generation model was busy or unavailable."""
+
+
+SKIP_MODEL = ("503", "429", "404", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "NOT_FOUND")
+
+
+def generate(config, contents):
+    """Generate with GEN_MODEL; if it is busy or unavailable, fall back to the next model."""
+    last = None
+    for model in GEN_MODELS:
+        try:
+            return with_retry(lambda: gemini().models.generate_content(
+                model=model, contents=contents, config=config), tries=2)
+        except Exception as e:  # noqa: BLE001
+            if any(code in str(e) for code in SKIP_MODEL):
+                print(f"[gen] {model} unavailable, trying next: {str(e)[:120]}", flush=True)
+                last = e
+                continue
+            raise
+    raise ModelBusy(str(last))
+
+
 def generate_json(prompt, instruction):
     from google.genai import types
-    res = with_retry(lambda: gemini().models.generate_content(
-        model=GEN_MODEL, contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=instruction, temperature=0,
-            response_mime_type="application/json")))
+    res = generate(types.GenerateContentConfig(
+        system_instruction=instruction, temperature=0,
+        response_mime_type="application/json"), prompt)
     return json.loads(res.text)
 
 
 def generate_text(prompt):
     from google.genai import types
-    res = with_retry(lambda: gemini().models.generate_content(
-        model=GEN_MODEL, contents=prompt,
-        config=types.GenerateContentConfig(temperature=0)))
+    res = generate(types.GenerateContentConfig(temperature=0), prompt)
     return res.text.strip()
 
 # ---------------------------------------------------------------- load the library
@@ -280,6 +303,12 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_methods=["*"], allow_headers=["*"])
 
 
+@app.exception_handler(ModelBusy)
+def model_busy(_request, _exc):
+    return JSONResponse(status_code=503, content={
+        "detail": "The AI service is very busy right now. Please try again in a minute."})
+
+
 class AskIn(BaseModel):
     question: str
     department: Optional[str] = None          # e.g. "assac" -> searches common + assac
@@ -305,7 +334,8 @@ class FeedbackIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "documents": len(DOCUMENTS), "pieces": len(CHUNKS), "model": GEN_MODEL}
+    return {"status": "ok", "documents": len(DOCUMENTS), "pieces": len(CHUNKS), "model": GEN_MODEL,
+            "fallback_models": GEN_FALLBACK_MODELS}
 
 
 @app.get("/documents")
