@@ -232,9 +232,49 @@ def allowed(chunk, libraries, include_superseded):
     return True
 
 
+# Keyword search (BM25): used when no Gemini key is set or the embedding call fails.
+_WORD = re.compile(r"[a-z0-9]+")
+_STOP = set("a an the of to in on for and or is are was be by as at it this that with from can may shall will "
+            "how what when who which do does any all not no".split())
+
+
+def _tokens(text):
+    return [w for w in _WORD.findall(text.lower()) if w not in _STOP]
+
+
+_DOC_TOKENS = [_tokens(c["text"]) for c in CHUNKS]
+_AVG_LEN = (sum(len(t) for t in _DOC_TOKENS) / len(_DOC_TOKENS)) if _DOC_TOKENS else 1.0
+_DF = {}
+for _toks in _DOC_TOKENS:
+    for _w in set(_toks):
+        _DF[_w] = _DF.get(_w, 0) + 1
+
+
+def keyword_scores(question, k1=1.5, b=0.75):
+    n = len(CHUNKS)
+    q = set(_tokens(question))
+    scores = np.zeros(n, dtype=np.float32)
+    for i, toks in enumerate(_DOC_TOKENS):
+        tf = {}
+        for w in toks:
+            if w in q:
+                tf[w] = tf.get(w, 0) + 1
+        for w, f in tf.items():
+            idf = np.log(1 + (n - _DF[w] + 0.5) / (_DF[w] + 0.5))
+            scores[i] += idf * f * (k1 + 1) / (f + k1 * (1 - b + b * len(toks) / _AVG_LEN))
+    return scores
+
+
 def search(question, libraries=None, include_superseded=False, k=TOP_K):
-    q = embed([question], "RETRIEVAL_QUERY")[0]
-    scores = VECTORS @ q
+    scores = None
+    if os.getenv("GEMINI_API_KEY"):
+        try:
+            scores = VECTORS @ embed([question], "RETRIEVAL_QUERY")[0]
+        except Exception as e:  # noqa: BLE001
+            print(f"[search] embeddings failed, using keyword search: {str(e)[:160]}", flush=True)
+    if scores is None:
+        scores = keyword_scores(question)
+        scores = np.where(scores > 0, scores, -np.inf)   # keyword search: only pieces sharing a word
     mask = np.array([allowed(c, libraries, include_superseded) for c in CHUNKS])
     scores = np.where(mask, scores, -np.inf)
     best = [i for i in np.argsort(scores)[::-1][:k] if np.isfinite(scores[i])]
@@ -408,6 +448,7 @@ class FeedbackIn(BaseModel):
 def health():
     return {"status": "ok", "documents": len(DOCUMENTS), "pieces": len(CHUNKS),
             "model": CLAUDE_MODEL if USE_CLAUDE else GEN_MODEL,
+            "search": "embeddings" if os.getenv("GEMINI_API_KEY") else "keyword",
             "fallback_models": GEN_MODELS if USE_CLAUDE else GEN_FALLBACK_MODELS}
 
 
